@@ -52,56 +52,63 @@ class DummyInstance(object):
     def tags(self):
         return {}
 
-def get_instances(region, aws_key, aws_secret, tags):
-    """
-
-    :param region:
-    :param aws_key:
-    :param aws_secret:
-    :param tags: is a dictionary, eg: {'Name': 'App1'}
-    :return:
-    """
-    # return [DummyInstance("hello - %s" % i) for i in range(1, 100)]
-    conn = boto.ec2.connect_to_region(region, # n virginia
-            aws_access_key_id=aws_key,
-            aws_secret_access_key=aws_secret)
-
-    filters = {}
-    if tags:
-        filter_tags = {}
-        for tn, tv in tags.iteritems():
-            filter_tags['tag:%s' % tn] = tv
-        filters.update(filter_tags)
-    filters.update({'instance-state-name':'running'})
-
-    reservations = conn.get_all_instances(filters=filters)
-    instances = []
-    for r in reservations:
-        for i in r.instances:
-            instances.append(i)
-    return instances
 
 class SimpleLineLoader(object):
-    def __init__(self, aws_region, aws_key, aws_secret, tags=None):
+    def __init__(self, aws_region, aws_key, aws_secret, aws_security_token=None, tags=None):
         self.aws_key = aws_key
         self.aws_secret = aws_secret
+        self.aws_token = aws_security_token
         if isinstance(aws_region, str):
             aws_region = [aws_region]
         self.aws_regions = aws_region
         self.tags = tags
 
+    def get_instances(self, region):
+        """
+
+        :param region:
+        :param aws_key:
+        :param aws_secret:
+        :param tags: is a dictionary, eg: {'Name': 'App1'}
+        :return:
+        """
+        # return [DummyInstance("hello - %s" % i) for i in range(1, 100)]
+        conn = boto.ec2.connect_to_region(region, # n virginia
+                                          aws_access_key_id=self.aws_key,
+                                          aws_secret_access_key=self.aws_secret,
+                                          security_token=self.aws_token)
+
+        filters = {}
+        if self.tags:
+            filter_tags = {}
+            for tn, tv in self.tags.iteritems():
+                filter_tags['tag:%s' % tn] = tv
+            filters.update(filter_tags)
+        filters.update({'instance-state-name':'running'})
+
+        reservations = conn.get_all_instances(filters=filters)
+        instances = []
+        for r in reservations:
+            for i in r.instances:
+                instances.append(i)
+        return instances
+
+    
     def load(self):
         self.instances = []
         for region in self.aws_regions:
-            instances = get_instances(region, self.aws_key, self.aws_secret, tags=self.tags)
+            instances = self.get_instances(region)
             self.instances += instances
         lines = []
         for i in self.instances:
             line = []
-            line.append(i.public_dns_name.ljust(50))
+            ip = i.public_dns_name or i.private_ip_address
+            line.append(ip.ljust(50))
             line.append(' | ')
             line.append(i.id.ljust(10))
             line.append(' | %s' % i.region.name)
+            line.append(' | ')
+            line.append('%s' % i.ip_address)
             line.append(' | ')
 
             for k, v in i.tags.items():
@@ -124,6 +131,9 @@ class AsshPicker(Picker):
             fn = getattr(module, 'cmd_%s' % self.args.command.upper(), None)
             if fn:
                 return fn
+
+    def get_ispublic(self, line):
+        return line.split('|')[2].strip() != 'None'
 
     def get_cmd_fn(self, cmd_name):
         from . import commands
@@ -414,13 +424,14 @@ def assh():
                  settings.AWS_REGION,
                  settings.AWS_ACCESS_KEY_ID,
                  settings.AWS_SECRET_ACCESS_KEY,
+                 settings.AWS_SECURITY_TOKEN,
                  tags=tags)
 
     lines = loader.load()
 
     if args.command=='list':
         for n in lines:
-            print n
+            print(n)
         return
 
     if len(lines) == 1:
