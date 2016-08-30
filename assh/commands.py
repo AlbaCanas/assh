@@ -3,61 +3,26 @@
 import subprocess
 
 
-def cmd_SSH(self, line):
-    return 'ssh %s' % line
+def cmd_SSH(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
+    if 'nat_ip' in kwargs and kwargs['nat_ip'] not in [None, 'None']:
+        command = 'ssh -o ProxyCommand="ssh -W %h:%p -i ~/.ssh/{nat_key}.pem {nat_user}@{nat_ip}" -i ~/.ssh/{key_name}.pem {ssh_user}@{ip}'
+    else:
+        command = 'ssh -i ~/.ssh/{key_name}.pem {ssh_user}@{ip}'
+    return command.format(ssh_user=ssh_user, nat_user=nat_user, **kwargs)
 
 
-def cmd_PROXY_HTTP(self, line):
-    return 'ssh -N -L 8000:{}:8000 ec2-user@NAT'.format(line)
+
+def cmd_PROXY_HTTP(self, **kwargs):
+    return 'ssh -N -L 8000:{ip}:8000 ec2-user@{nat_ip}'.format(**kwargs)
 
 
-def cmd_NOOP(self, line):
-    """
-    a command that does nothing, just prints output
-    """
-    return 'echo %s' % line
+#def cmd_FAB(self, line):
+#    rest = subprocess.list2cmdline(self.args.rest)
+#    return 'fab -H %s %s' % (line, rest)
 
 
-def cmd_FAB(self, line):
-    rest = subprocess.list2cmdline(self.args.rest)
-    return 'fab -H %s %s' % (line, rest)
 
-
-def cmd_GRAPH_CPU(self, line):
-    instance = self.get_instance_by_public_ip(line)
-    import boto.ec2.cloudwatch
-    import datetime
-    cw = boto.ec2.cloudwatch.connect_to_region(self.loader.aws_region,
-                                               aws_access_key_id=self.loader.aws_key,
-                                               aws_secret_access_key=self.loader.aws_secret)
-    stats = cw.get_metric_statistics(
-        300,
-        datetime.datetime.utcnow() - datetime.timedelta(seconds=3200),
-        datetime.datetime.utcnow(),
-        'CPUUtilization',
-        'AWS/EC2',
-        'Average',
-        dimensions={'InstanceId':[instance.id]}
-    )
-
-    stats = sorted(stats, key=lambda x: x['Timestamp'])
-
-    import plotly
-    from plotly.graph_objs import Scatter, Layout
-    plotly.offline.plot({
-    "data": [
-        Scatter(x=[i['Timestamp'] for k, i in enumerate(stats)], y=[i['Average'] for i in stats])
-    ],
-    "layout": Layout(
-            title="CPU - %s" % instance.id,
-            yaxis=dict(range=[0, 100])
-        )
-    })
-
-    return "echo see the browser\n"
-
-
-def cmd_INFO(self, line):
+def cmd_INFO(self, **kwargs):
     instance_info = """
 id
 groups - A list of Group objects representing the security groups associated with the instance.
@@ -99,7 +64,7 @@ instance_profile - A Python dict containing the instance profile id and arn asso
     """
 
     ret = []
-    our_instance = self.get_instance_by_public_ip(line)
+    our_instance = self.get_instance_by_public_ip(kwargs['public_ip'])
     for ln in instance_info.split("\n"):
         if ln:
             kv = ln.split('-')
