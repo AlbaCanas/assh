@@ -11,9 +11,26 @@ def cmd_SSH(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
     return command.format(ssh_user=ssh_user, nat_user=nat_user, **kwargs)
 
 
-
 def cmd_PROXY_HTTP(self, **kwargs):
     return 'ssh -N -L 8000:{ip}:8000 ec2-user@{nat_ip}'.format(**kwargs)
+
+
+def cmd_SCP_TO(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
+    if 'nat_ip' in kwargs and kwargs['nat_ip'] not in [None, 'None']:
+        command = 'scp -o ProxyCommand="ssh -W %h:%p -i ~/.ssh/{nat_key}.pem {nat_user}@{nat_ip}" -i ~/.ssh/{key_name}.pem {src} {ssh_user}@{ip}:{to}'
+    else:
+        command = 'scp -i ~/.ssh/{key_name}.pem {src} {ssh_user}@{ip}:{to}'
+
+    return command.format(ssh_user=ssh_user, nat_user=nat_user, **kwargs)
+
+
+def cmd_SCP_FROM(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
+    if 'nat_ip' in kwargs and kwargs['nat_ip'] not in [None, 'None']:
+        command = 'scp -o ProxyCommand="ssh -W %h:%p -i ~/.ssh/{nat_key}.pem {nat_user}@{nat_ip}" -i ~/.ssh/{key_name}.pem {ssh_user}@{ip}:{src} {to}'
+    else:
+        command = 'scp -i ~/.ssh/{key_name}.pem {ssh_user}@{ip}:{src} {to}'
+
+    return command.format(ssh_user=ssh_user, nat_user=nat_user, **kwargs)
 
 
 #def cmd_FAB(self, line):
