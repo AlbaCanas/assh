@@ -340,13 +340,13 @@ def assh():
             print(n)
         return
 
-    if len(lines) == 1:
-        # no need to select anything...
-        picker = AsshPicker(args=args)
-        fn = picker.get_cmd_fn(args.command)
-        line = fn(lines[0].split(SEPARATOR)[0].strip())
-        picker.write_output(line)
-        return
+    #if len(lines) == 1:
+    #    # no need to select anything...
+    #    picker = AsshPicker(args=args)
+    #    fn = picker.get_cmd_fn(args.command)
+    #    line = fn(lines[0].split(SEPARATOR)[0].strip())
+    #    picker.write_output(line)
+    #    return
 
     main(args,
          picker_cls=AsshPicker,
