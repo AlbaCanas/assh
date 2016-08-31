@@ -48,6 +48,8 @@ you can also extend and override commands in project.py file
 
 your costum command will recieve information about the selected machine
 
+Your ssh must be located in ~/.ssh and its name must be the same as configured in amazon
+
 Usage
 ===========================
 
