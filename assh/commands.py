@@ -12,7 +12,7 @@ def cmd_SSH(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
 
 
 def cmd_PROXY_HTTP(self, **kwargs):
-    return 'ssh -N -L 8000:{ip}:8000 ec2-user@{nat_ip}'.format(**kwargs)
+    return 'ssh -N -L 8000:{ip}:8000 -i ~/.ssh/{nat_key}.pem ec2-user@{nat_ip}'.format(**kwargs)
 
 
 def cmd_SCP_TO(self, ssh_user='ec2-user', nat_user='ec2-user', **kwargs):
