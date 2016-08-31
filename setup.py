@@ -14,7 +14,7 @@ setup(
     url="http://github.com/ybrs/assh",
     author_email='aybars.badur@gmail.com',
     packages=['assh'],
-    install_requires=['hst', 'boto', 'plotly==1.9.6'],
+    install_requires=['hst', 'boto3', 'plotly==1.9.6'],
     scripts=['./assh/bin/assh'],
     classifiers = [
         'Development Status :: 4 - Beta',

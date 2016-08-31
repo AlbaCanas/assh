@@ -1,6 +1,6 @@
 #-*- coding: utf-8 -*-
 
-import boto.ec2
+import boto3
 
 import imp
 import subprocess
@@ -23,89 +23,85 @@ logger = logging.getLogger(__name__)
 import curses
 
 
-class DummyRegion(object):
-    @property
-    def name(self):
-        return "region"
+SEPARATOR = '|'
 
-class DummyInstance(object):
-    def __init__(self, ip):
-        self.ip = ip
-
-    @property
-    def id(self):
-        return "x"
-
-    @property
-    def region(self):
-        return DummyRegion()
-
-    @property
-    def name(self):
-        return "name"
-
-    @property
-    def public_dns_name(self):
-        return self.ip
-
-    @property
-    def tags(self):
-        return {}
-
-def get_instances(region, aws_key, aws_secret, tags):
-    """
-
-    :param region:
-    :param aws_key:
-    :param aws_secret:
-    :param tags: is a dictionary, eg: {'Name': 'App1'}
-    :return:
-    """
-    # return [DummyInstance("hello - %s" % i) for i in range(1, 100)]
-    conn = boto.ec2.connect_to_region(region, # n virginia
-            aws_access_key_id=aws_key,
-            aws_secret_access_key=aws_secret)
-
-    filters = {}
-    if tags:
-        filter_tags = {}
-        for tn, tv in tags.iteritems():
-            filter_tags['tag:%s' % tn] = tv
-        filters.update(filter_tags)
-    filters.update({'instance-state-name':'running'})
-
-    reservations = conn.get_all_instances(filters=filters)
-    instances = []
-    for r in reservations:
-        for i in r.instances:
-            instances.append(i)
-    return instances
 
 class SimpleLineLoader(object):
-    def __init__(self, aws_region, aws_key, aws_secret, tags=None):
+    def __init__(self, aws_region, aws_key, aws_secret, aws_security_token=None, tags=None):
         self.aws_key = aws_key
         self.aws_secret = aws_secret
+        self.aws_token = aws_security_token
         if isinstance(aws_region, str):
             aws_region = [aws_region]
         self.aws_regions = aws_region
         self.tags = tags
+        self.session = boto3.Session(aws_access_key_id=self.aws_key,
+                                aws_secret_access_key=self.aws_secret,
+                                aws_session_token=self.aws_token)
+
+
+    def get_instances(self, region):
+        """
+
+        :param region:
+        :param aws_key:
+        :param aws_secret:
+        :param tags: is a dictionary, eg: {'Name': 'App1'}
+        :return:
+        """
+
+        ec2 = self.session.resource('ec2')
+        filters = []
+        if self.tags:
+            for tn, tv in self.tags.iteritems():
+                filters.append({'Name': tn, 'Values': [tv]})
+        filters.append({'Name': 'instance-state-name', 'Values': ['running']})
+
+        instances = ec2.instances.filter(Filters=filters)
+        return instances
+
 
     def load(self):
         self.instances = []
         for region in self.aws_regions:
-            instances = get_instances(region, self.aws_key, self.aws_secret, tags=self.tags)
+            instances = self.get_instances(region)
             self.instances += instances
         lines = []
+        igw = {}
         for i in self.instances:
+            Filters_route = [{'Name':'vpc-id', 'Values':[i.vpc_id]}]
+            ec2 = self.session.resource('ec2')
+            nat_ip = None
+            nat_key = None
+            if not i.public_ip_address:
+                if i.vpc_id not in igw:
+                    for routes in ec2.route_tables.filter(Filters=Filters_route):
+                        for route in routes.routes:
+                            if route.instance_id:
+                                nat_instance = route.instance_id
+                                nat_instance = ec2.Instance(nat_instance)
+                                nat_ip = nat_instance.public_ip_address
+                                nat_key = nat_instance.key_name
+                                igw[i.vpc_id] = (nat_ip, nat_key)
+                                break
+                else:
+                    nat_ip, nat_key = igw[i.vpc_id]
+
             line = []
-            line.append(i.public_dns_name.ljust(50))
+            ip = i.public_dns_name or i.private_ip_address
+            line.append(ip.ljust(50))
+            line.append(' | ')
+            line.append('{}'.format(i.key_name))
             line.append(' | ')
             line.append(i.id.ljust(10))
-            line.append(' | %s' % i.region.name)
+            line.append(' | ')
+            line.append('{}'.format(nat_ip))
+            line.append(' | ')
+            line.append('{}'.format(nat_key))
             line.append(' | ')
 
-            for k, v in i.tags.items():
-                line.append('%s = %s' % (k, v))
+            for tag in i.tags:
+                line.append('{} = {}'.format(tag['Key'], tag['Value']))
             lines.append(' '.join(line))
         return lines
 
@@ -113,17 +109,31 @@ class AsshPicker(Picker):
 
     output_only = False
 
+    def get_data_from_line(self, line):
+        """IP, instanceid, key_name, nat_ip, tags """
+        ip, key_name, instance_id, nat_ip, nat_key, tags = [x.strip() for x in line.split(SEPARATOR)]
+
+        return {'ip': ip,
+                'instance_id': instance_id,
+                'nat_ip': nat_ip,
+                'nat_key': nat_key,
+                'key_name': key_name,
+                'tags': tags}
+
     def get_hostname_from_line(self, line):
-        return line.split('|')[0].strip()
+        return line.split(SEPARATOR)[0].strip()
 
     def get_instance_id_from_line(self, line):
-        return line.split('|')[1].strip()
+        return line.split(SEPARATOR)[1].strip()
 
     def get_cmd_fn_from_modules(self, *modules):
         for module in modules:
-            fn = getattr(module, 'cmd_%s' % self.args.command.upper(), None)
+            fn = getattr(module, 'cmd_{}'.format(self.args.command.upper()), None)
             if fn:
                 return fn
+
+    def get_ispublic(self, line):
+        return line.split(SEPARATOR)[2].strip() != 'None'
 
     def get_cmd_fn(self, cmd_name):
         from . import commands
@@ -132,7 +142,7 @@ class AsshPicker(Picker):
             return partial(fn, self)
 
         # look for builtins
-        return getattr(self, 'cmd_%s' % self.args.command.upper())
+        return getattr(self, 'cmd_{}'.format(self.args.command.upper()))
 
     def write_output(self, line):
         with open(self.args.out, 'w') as f:
@@ -148,7 +158,7 @@ class AsshPicker(Picker):
     def create_menu(self):
         self.win.addstr(3, 10, "xxxxxxxxxxx", curses.color_pair(1))
         for i in range(0, 10):
-            self.win.addstr(4 + i, 10, "x    %s     x" % i, curses.color_pair(1))
+            self.win.addstr(4 + i, 10, "x    {}     x".format(i), curses.color_pair(1))
         self.win.addstr(4 + 10, 10, "xxxxxxxxxxx", curses.color_pair(1))
 
     def refresh_window(self, pressed_key=None):
@@ -165,9 +175,9 @@ class AsshPicker(Picker):
         self.which_lines(self.search_txt)
 
         if not self.last_lines:
-            self.print_line("Results [%s]" % self.index.size(), highlight=True)
+            self.print_line("Results [{}]".format(self.index.size()), highlight=True)
         else:
-            self.print_line("Results - [%s]" % len(self.last_lines), highlight=True)
+            self.print_line("Results - [{}]".format(len(self.last_lines)), highlight=True)
 
         max_y, max_x = self.get_max_viewport()
 
@@ -182,9 +192,9 @@ class AsshPicker(Picker):
             logger.debug("is pending %s [%s____%s]", pending, self.pick_line(i), self.multiple_selected)
             try:
                 if pending:
-                    line = u"[x] %s" % p[1]
+                    line = u"[x] {}".format(p[1])
                 else:
-                    line = u"[ ] %s" % p[1]
+                    line = u"[ ] {}".format(p[1])
             except:
                 logger.exception("exception in adding line %s", p)
             else:
@@ -196,7 +206,7 @@ class AsshPicker(Picker):
         # self.create_menu()
 
         try:
-            s = 'type something to search | [F5] copy | [F6] multiple selection | [TAB] complete to current | [ENTER] run | [ESC] quit'
+            s = 'type something to search | [F5] copy | [TAB] complete to current | [ENTER] run | [ESC] quit'
             self.print_footer("[%s] %s" % (self.mode, s))
         except curses.error as e:
             pass
@@ -211,22 +221,25 @@ class AsshPicker(Picker):
         self.no_enter_yet = False
         logger.debug("selected_lineno: %s", line)
 
-        if len(self.multiple_selected) == 0:
-            self.multiple_selected = [line]
-
-        line = self.args.separator.join([self.get_hostname_from_line(l) for l in self.multiple_selected])
+        args = self.get_data_from_line(line)
 
         logger.debug("selected line: %s", line)
 
-        if self.args.eval:
-            if self.args.replace:
-                line = self.args.eval.replace(self.args.replace, line)
-            else:
-                line = "%s %s" % (self.args.eval, line)
+#        if self.args.eval
+#            if self.args.replace:
+#                line = self.args.eval.replace(self.args.replace, line)
+#            else:
+#                line = "%s %s" % (self.args.eval, line)
+
+        if self.args.rest:
+            for arg in self.args.rest:
+                key, value = arg.split('=')
+                args[key] = value
+
 
         if self.args.command:
             fn = self.get_cmd_fn(self.args.command)
-            line = fn(line)
+            line = fn(**args)
 
         self.write_output(line)
 
@@ -240,107 +253,11 @@ class AsshPicker(Picker):
 
         self.refresh_window()
 
-    def cmd_NOOP(self, line):
-        """
-        a command that does nothing, just prints output
-        """
-        return 'echo %s' % line
-
-    def cmd_SSH(self, line):
-        return 'ssh %s' % line
-
-    def cmd_FAB(self, line):
-        rest = subprocess.list2cmdline(self.args.rest)
-        return 'fab -H %s %s' % (line, rest)
-
     def get_instance_by_public_ip(self, public_ip):
         for i in self.loader.instances:
             if i.public_dns_name == public_ip:
                 return i
 
-    def cmd_GRAPH_CPU(self, line):
-        instance = self.get_instance_by_public_ip(line)
-        import boto.ec2.cloudwatch
-        import datetime
-        cw = boto.ec2.cloudwatch.connect_to_region(self.loader.aws_region,
-                                                   aws_access_key_id=self.loader.aws_key,
-                                                   aws_secret_access_key=self.loader.aws_secret)
-        stats = cw.get_metric_statistics(
-            300,
-            datetime.datetime.utcnow() - datetime.timedelta(seconds=3200),
-            datetime.datetime.utcnow(),
-            'CPUUtilization',
-            'AWS/EC2',
-            'Average',
-            dimensions={'InstanceId':[instance.id]}
-        )
-
-        stats = sorted(stats, key=lambda x: x['Timestamp'])
-
-        import plotly
-        from plotly.graph_objs import Scatter, Layout
-        plotly.offline.plot({
-        "data": [
-            Scatter(x=[i['Timestamp'] for k, i in enumerate(stats)], y=[i['Average'] for i in stats])
-        ],
-        "layout": Layout(
-                title="CPU - %s" % instance.id,
-                yaxis=dict(range=[0, 100])
-            )
-        })
-
-        return "echo see the browser\n"
-
-    def cmd_INFO(self, line):
-        instance_info = """
-id
-groups - A list of Group objects representing the security groups associated with the instance.
-public_dns_name - The public dns name of the instance.
-private_dns_name - The private dns name of the instance.
-state - The string representation of the instance’s current state.
-state_code - An integer representation of the instance’s current state.
-previous_state - The string representation of the instance’s previous state.
-previous_state_code - An integer representation of the instance’s current state.
-key_name - The name of the SSH key associated with the instance.
-instance_type - The type of instance (e.g. m1.small).
-launch_time - The time the instance was launched.
-image_id - The ID of the AMI used to launch this instance.
-placement - The availability zone in which the instance is running.
-placement_group - The name of the placement group the instance is in (for cluster compute instances).
-placement_tenancy - The tenancy of the instance, if the instance is running within a VPC. An instance with a tenancy of dedicated runs on a single-tenant hardware.
-kernel - The kernel associated with the instance.
-ramdisk - The ramdisk associated with the instance.
-architecture - The architecture of the image (i386|x86_64).
-hypervisor - The hypervisor used.
-virtualization_type - The type of virtualization used.
-product_codes - A list of product codes associated with this instance.
-ami_launch_index - This instances position within it’s launch group.
-monitored - A boolean indicating whether monitoring is enabled or not.
-monitoring_state - A string value that contains the actual value of the monitoring element returned by EC2.
-spot_instance_request_id - The ID of the spot instance request if this is a spot instance.
-subnet_id - The VPC Subnet ID, if running in VPC.
-vpc_id - The VPC ID, if running in VPC.
-private_ip_address - The private IP address of the instance.
-ip_address - The public IP address of the instance.
-platform - Platform of the instance (e.g. Windows)
-root_device_name - The name of the root device.
-root_device_type - The root device type (ebs|instance-store).
-block_device_mapping - The Block Device Mapping for the instance.
-state_reason - The reason for the most recent state transition.
-interfaces - List of Elastic Network Interfaces associated with this instance.
-ebs_optimized - Whether instance is using optimized EBS volumes or not.
-instance_profile - A Python dict containing the instance profile id and arn associated with this instance.
-        """
-
-        ret = []
-        our_instance = self.get_instance_by_public_ip(line)
-        for ln in instance_info.split("\n"):
-            if ln:
-                kv = ln.split('-')
-                k = kv[0].strip()
-                if k:
-                    ret.append(u"%s: %s" % (k.decode('utf8'), getattr(our_instance, k, '')))
-        return "%s\n" % '\n'.join(ret)
 
 def assh():
     parser = argparse.ArgumentParser()
@@ -384,7 +301,6 @@ def assh():
     parser.add_argument("command", type=str, nargs='?',
                     help="command - eg. ssh, fab")
 
-
     parser.add_argument('rest', nargs=argparse.REMAINDER)
 
 
@@ -414,22 +330,23 @@ def assh():
                  settings.AWS_REGION,
                  settings.AWS_ACCESS_KEY_ID,
                  settings.AWS_SECRET_ACCESS_KEY,
+                 settings.AWS_SECURITY_TOKEN,
                  tags=tags)
 
     lines = loader.load()
 
     if args.command=='list':
         for n in lines:
-            print n
+            print(n)
         return
 
-    if len(lines) == 1:
-        # no need to select anything...
-        picker = AsshPicker(args=args)
-        fn = picker.get_cmd_fn(args.command)
-        line = fn(lines[0].split('|')[0].strip())
-        picker.write_output(line)
-        return
+    #if len(lines) == 1:
+    #    # no need to select anything...
+    #    picker = AsshPicker(args=args)
+    #    fn = picker.get_cmd_fn(args.command)
+    #    line = fn(lines[0].split(SEPARATOR)[0].strip())
+    #    picker.write_output(line)
+    #    return
 
     main(args,
          picker_cls=AsshPicker,

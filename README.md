@@ -29,10 +29,11 @@ add your AWS account info
 
     AWS_ACCESS_KEY_ID = 'XXXXX'
     AWS_SECRET_ACCESS_KEY = 'YYYY'
+    AWS_SECURITY_TOKEN = None # OPTIONAL
     AWS_REGION = 'us-east-1'
 
 a region also can be a list eg
-    AWS_REGION = ['us-east-1', 'us-east-2']
+    AWS_REGION = 'us-east-2'
 
 and then you can
 
@@ -42,35 +43,28 @@ select your fav. server and hit enter.
 
 you can also extend and override commands in project.py file
 
-    def cmd_SSH(self, line):
-        return 'ssh -i ~/.ssh/project.pem ubuntu@%s' % line
+    def cmd_SSH(self, **kwargs):
+        return 'ssh -i ~/.ssh/project.pem ubuntu@{ip}'.format(**kwargs)
 
-for more examples about adding your own commands, please see http://github.com/ybrs/assh/examples/project.py
+your costum command will recieve information about the selected machine
 
 Usage
 ===========================
 
-using fabric
-
-    assh project fab -P -- 'uptime && df -h'
-
-    assh project fab -P uptime
+using SSH
 
     assh project ssh
 
-    assh project graph_cpu
+    assh project ssh ssh_user=ubuntu
+ 
+    assh project ssh nat_user=ec2-user
+ 
+    assh project ssh ssh_user=ubuntu nat_user=ec2-user
 
-you can also filter by tags
 
-    # show only worker instances - ones tagged with Role as worker
-    assh --filter-tag=Role:worker project ssh
+using SCP
 
-    # if we can only show one instance we don't show curses ui and jump directly to command
-    assh --filter-tag=Name:app1 project ssh
-
-    # because filtering with name is so common there is a shortcut
-    assh -N app1 project ssh
-
-    # we can pipe the servers name to another application with noop command
-    assh -N app1 project noop | xargs ssh -i ~/.ssh/foo.pem
+    assh project scp_to src=path/to/local/file to=path/on/remote
+    
+    assh project scp_from src=remote/path to=local/path
 
