@@ -22,103 +22,54 @@ locale.setlocale(locale.LC_ALL,"")
 logger = logging.getLogger(__name__)
 import curses
 
+from .client import AWSCli
+
 
 SEPARATOR = '|'
 
 
 class SimpleLineLoader(object):
-    def __init__(self, aws_region, aws_key, aws_secret, aws_security_token=None, tags=None):
-        self.aws_key = aws_key
-        self.aws_secret = aws_secret
-        self.aws_token = aws_security_token
-        if isinstance(aws_region, str):
-            aws_region = [aws_region]
-        self.aws_regions = aws_region
+    def __init__(self, client, region=None, tags=None):
+        self.client = client
+        self.region = region
         self.tags = tags
-        self.session = boto3.Session(aws_access_key_id=self.aws_key,
-                                aws_secret_access_key=self.aws_secret,
-                                aws_session_token=self.aws_token)
-
-
-    def get_instances(self, region):
-        """
-
-        :param region:
-        :param aws_key:
-        :param aws_secret:
-        :param tags: is a dictionary, eg: {'Name': 'App1'}
-        :return:
-        """
-
-        ec2 = self.session.resource('ec2')
-        filters = []
-        if self.tags:
-            for tn, tv in self.tags.iteritems():
-                filters.append({'Name': tn, 'Values': [tv]})
-        filters.append({'Name': 'instance-state-name', 'Values': ['running']})
-
-        instances = ec2.instances.filter(Filters=filters)
-        return instances
-
 
     def load(self):
-        self.instances = []
-        for region in self.aws_regions:
-            instances = self.get_instances(region)
-            self.instances += instances
+        instances = self.client.get_instances(self.region, self.tags)
         lines = []
-        igw = {}
-        for i in self.instances:
-            Filters_route = [{'Name':'vpc-id', 'Values':[i.vpc_id]}]
-            ec2 = self.session.resource('ec2')
-            nat_ip = None
-            nat_key = None
-            if not i.public_ip_address:
-                if i.vpc_id not in igw:
-                    for routes in ec2.route_tables.filter(Filters=Filters_route):
-                        for route in routes.routes:
-                            if route.instance_id:
-                                nat_instance = route.instance_id
-                                nat_instance = ec2.Instance(nat_instance)
-                                nat_ip = nat_instance.public_ip_address
-                                nat_key = nat_instance.key_name
-                                igw[i.vpc_id] = (nat_ip, nat_key)
-                                break
-                else:
-                    nat_ip, nat_key = igw[i.vpc_id]
-
+        for i in instances:
+            name = [tag['Value'] for tag in i.tags if tag['Key'] == 'Name'][0]
             line = []
-            ip = i.public_dns_name or i.private_ip_address
-            line.append(ip.ljust(50))
+            ip = i.public_ip_address or i.private_ip_address
+            line.append(name.ljust(50))
             line.append(' | ')
-            line.append('{}'.format(i.key_name))
+            line.append(ip.ljust(16))
             line.append(' | ')
-            line.append(i.id.ljust(10))
+            line.append('{}'.format(i.key_name).ljust(30))
             line.append(' | ')
-            line.append('{}'.format(nat_ip))
-            line.append(' | ')
-            line.append('{}'.format(nat_key))
-            line.append(' | ')
-
-            for tag in i.tags:
-                line.append('{} = {}'.format(tag['Key'], tag['Value']))
+            line.append('{}'.format(i.id))
             lines.append(' '.join(line))
+
         return lines
 
 class AsshPicker(Picker):
 
+    client = None
     output_only = False
 
     def get_data_from_line(self, line):
-        """IP, instanceid, key_name, nat_ip, tags """
-        ip, key_name, instance_id, nat_ip, nat_key, tags = [x.strip() for x in line.split(SEPARATOR)]
-
+        instance_id = line.split(SEPARATOR)[-1].strip()
+        instance = self.client.get_instance(instance_id)
+        ip = instance.public_ip_address or instance.private_ip_address
+        nat_ip, nat_key = self.client.get_nat(instance)
         return {'ip': ip,
                 'instance_id': instance_id,
                 'nat_ip': nat_ip,
                 'nat_key': nat_key,
-                'key_name': key_name,
-                'tags': tags}
+                'key_name': instance.key_name,
+                'tags': instance.tags}
+
+
 
     def get_hostname_from_line(self, line):
         return line.split(SEPARATOR)[0].strip()
@@ -325,13 +276,17 @@ def assh():
 
     if args.filter_name:
         tags['Name'] = args.filter_name
+    
+    client = AWSCli(settings.AWS_REGION,
+                    settings.AWS_ACCESS_KEY_ID,
+                    settings.AWS_SECRET_ACCESS_KEY,
+                    settings.AWS_SECURITY_TOKEN)
+  
+    AsshPicker.client = client
 
-    loader = SimpleLineLoader(
-                 settings.AWS_REGION,
-                 settings.AWS_ACCESS_KEY_ID,
-                 settings.AWS_SECRET_ACCESS_KEY,
-                 settings.AWS_SECURITY_TOKEN,
-                 tags=tags)
+
+    loader = SimpleLineLoader(client=client,
+                              tags=tags)
 
     lines = loader.load()
 
