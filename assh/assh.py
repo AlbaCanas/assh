@@ -41,11 +41,11 @@ class SimpleLineLoader(object):
             name = [tag['Value'] for tag in i.tags if tag['Key'] == 'Name'][0]
             line = []
             ip = i.public_ip_address or i.private_ip_address
-            line.append(name.ljust(20))
+            line.append(name.ljust(50))
             line.append(' | ')
             line.append(ip.ljust(16))
             line.append(' | ')
-            line.append('{}'.format(i.key_name))
+            line.append('{}'.format(i.key_name).ljust(30))
             line.append(' | ')
             line.append('{}'.format(i.id))
             lines.append(' '.join(line))
@@ -295,13 +295,13 @@ def assh():
             print(n)
         return
 
-    if len(lines) == 1:
-        # no need to select anything...
-        picker = AsshPicker(client=client, args=args)
-        fn = picker.get_cmd_fn(args.command)
-        line = fn(lines[0].split(SEPARATOR)[0].strip())
-        picker.write_output(line)
-        return
+    #if len(lines) == 1:
+    #    # no need to select anything...
+    #    picker = AsshPicker(args=args)
+    #    fn = picker.get_cmd_fn(args.command)
+    #    line = fn(lines[0].split(SEPARATOR)[0].strip())
+    #    picker.write_output(line)
+    #    return
 
     main(args,
          picker_cls=AsshPicker,
