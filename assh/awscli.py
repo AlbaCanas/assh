@@ -1,71 +1,55 @@
-#-*- coding: utf-8 -*-
-
-import boto3
-
+import os
 import imp
-import subprocess
-
-from hst.hst import main
-import os
-import sys
-if os.name != 'posix':
-    sys.exit('platform not supported')
 import logging
-import os
 import argparse
-from hst.hst import Picker, QuitException
 
+from hst.hst import main, QuitException
 
-import locale
-locale.setlocale(locale.LC_ALL,"")
+from .client import AWSCli
+from .interface import SimpleLineLoader, BasePicker, SimpleLineLoader
 
 logger = logging.getLogger(__name__)
 
-from .client import AWSCli
-from .interface import SimpleLineLoader, BasePicker
+class LineLoader(SimpleLineLoader):
 
-class AsshPicker(BasePicker):
+    def get_instances(self):
+        self.instances = self.client.get_instances(self.region, instance_state='stopped', tags=self.tags)
 
+class AwsPicker(BasePicker):
+    def __init__(self, *args, **kwargs):
+        self.multiple_selected = []
+        super(AwsPicker, self).__init__(*args, **kwargs)
+        self.footer = 'type something to search | [F5] copy | [F6] select multiple | [TAB] complete to current | [ENTER] run | [ESC] quit'
+
+    def key_F6(self):
+        line = self.pick_line()
+        self.multiple_selected.append(line)
+        self.refresh_window()
 
     def key_ENTER(self):
-        # if not self.args.command:
-        #     self.create_menu()
-        #     self.refresh_window()
-        #     return
         line = self.pick_line()
         self.no_enter_yet = False
         logger.debug("selected_lineno: %s", line)
-
-        # if self.region_select is True:
-        #     self.client.session = self.client.get_region(line.strip())
-        #     self.refresh_window()
-        #     return
-
-        args = self.get_data_from_line(line)
+        self.multiple_selected.append(line)
 
         logger.debug("selected line: %s", line)
-
-#        if self.args.eval
-#            if self.args.replace:
-#                line = self.args.eval.replace(self.args.replace, line)
-#            else:
-#                line = "%s %s" % (self.args.eval, line)
 
         if self.args.rest:
             for arg in self.args.rest:
                 key, value = arg.split('=')
                 args[key] = value
 
-        if self.args.command:
-            fn = self.get_cmd_fn(self.args.command)
-            line = fn(**args)
-
-        self.write_output(line)
+        func = getattr(self.client, self.args.command)
+        f = open('/tmp/assh.log', 'w')
+        for instance in self.multiple_selected:
+            instance_data = self.get_data_from_line(instance)
+            f.write("{}\n".format(func(instance['instance_id'])))
+            func(instance['instance_id'])
 
         raise QuitException()
 
 
-def assh():
+def aws():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-o", "--out", type=str,
@@ -121,7 +105,7 @@ def assh():
 
     settings = imp.load_source('settings', '%s/.assh/%s.py' % (os.path.expanduser('~'), args.account))
 
-    AsshPicker.settings = settings
+    AwsPicker.settings = settings
 
     tags = {}
     if args.filter_tag:
@@ -137,10 +121,10 @@ def assh():
                     settings.AWS_SECRET_ACCESS_KEY,
                     settings.AWS_SECURITY_TOKEN)
 
-    AsshPicker.client = client
+    AwsPicker.client = client
 
 
-    loader = SimpleLineLoader(client=client,
+    loader = LineLoader(client=client,
                               tags=tags)
 
     lines = loader.load()
@@ -150,17 +134,9 @@ def assh():
             print(n)
         return
 
-    #if len(lines) == 1:
-    #    # no need to select anything...
-    #    picker = AsshPicker(args=args)
-    #    fn = picker.get_cmd_fn(args.command)
-    #    line = fn(lines[0].split(SEPARATOR)[0].strip())
-    #    picker.write_output(line)
-    #    return
-
     main(args,
-         picker_cls=AsshPicker,
+         picker_cls=AwsPicker,
          loader=loader)
 
 if __name__ == '__main__':
-    assh()
+    aws()
