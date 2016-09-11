@@ -12,8 +12,16 @@ logger = logging.getLogger(__name__)
 
 class LineLoader(SimpleLineLoader):
 
+    def __init__(self, command, *args, **kwargs):
+        if command == 'stop':
+            self.instance_state = 'running'
+        elif command == 'start':
+            self.instance_state = 'stopped'
+
+        super(LineLoader, self).__init__(*args, **kwargs)
+
     def get_instances(self):
-        self.instances = self.client.get_instances(self.region, instance_state='stopped', tags=self.tags)
+        self.instances = self.client.get_instances(self.region, instance_state=self.instance_state, tags=self.tags)
 
 class AwsPicker(BasePicker):
     def __init__(self, *args, **kwargs):
@@ -125,7 +133,8 @@ def aws():
 
 
     loader = LineLoader(client=client,
-                              tags=tags)
+                        tags=tags,
+                        command=args.command)
 
     lines = loader.load()
 
