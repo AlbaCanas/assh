@@ -28,28 +28,13 @@ class AsshPicker(BasePicker):
 
 
     def key_ENTER(self):
-        # if not self.args.command:
-        #     self.create_menu()
-        #     self.refresh_window()
-        #     return
         line = self.pick_line()
         self.no_enter_yet = False
         logger.debug("selected_lineno: %s", line)
 
-        # if self.region_select is True:
-        #     self.client.session = self.client.get_region(line.strip())
-        #     self.refresh_window()
-        #     return
-
         args = self.get_data_from_line(line)
 
         logger.debug("selected line: %s", line)
-
-#        if self.args.eval
-#            if self.args.replace:
-#                line = self.args.eval.replace(self.args.replace, line)
-#            else:
-#                line = "%s %s" % (self.args.eval, line)
 
         if self.args.rest:
             for arg in self.args.rest:
@@ -149,14 +134,6 @@ def assh():
         for n in lines:
             print(n)
         return
-
-    #if len(lines) == 1:
-    #    # no need to select anything...
-    #    picker = AsshPicker(args=args)
-    #    fn = picker.get_cmd_fn(args.command)
-    #    line = fn(lines[0].split(SEPARATOR)[0].strip())
-    #    picker.write_output(line)
-    #    return
 
     main(args,
          picker_cls=AsshPicker,
