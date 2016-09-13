@@ -15,7 +15,6 @@ class SimpleLineLoader(object):
         self.client = client
         self.region = region
         self.tags = tags
-        self.footer = 'type something to search | [F5] copy | [TAB] complete to current | [ENTER] run | [ESC] quit'
         self.get_instances()
 
     def get_instances(self):
@@ -39,6 +38,8 @@ class SimpleLineLoader(object):
         return lines
 
 class BasePicker(Picker):
+
+    footer = 'type something to search | [F5] copy | [TAB] complete to current | [ENTER] run | [ESC] quit'
 
     client = None
     output_only = False

@@ -51,8 +51,7 @@ class AwsPicker(BasePicker):
         f = open('/tmp/assh.log', 'w')
         for instance in self.multiple_selected:
             instance_data = self.get_data_from_line(instance)
-            f.write("{}\n".format(func(instance['instance_id'])))
-            func(instance['instance_id'])
+            func(instance_data['instance_id'])
 
         raise QuitException()
 
