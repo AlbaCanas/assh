@@ -1,8 +1,9 @@
+import sys
 import curses
 import logging
-
 from functools import partial
 
+import botocore
 from hst.hst import Picker, QuitException
 
 
@@ -20,20 +21,26 @@ class SimpleLineLoader(object):
     def get_instances(self):
         self.instances = self.client.get_instances(self.region, tags=self.tags)
 
+
     def load(self):
         lines = []
-        for i in self.instances:
-            name = [tag['Value'] for tag in i.tags if tag['Key'] == 'Name'][0]
-            line = []
-            ip = i.public_ip_address or i.private_ip_address
-            line.append(name.ljust(50))
-            line.append(' | ')
-            line.append(ip.ljust(16))
-            line.append(' | ')
-            line.append('{}'.format(i.key_name).ljust(30))
-            line.append(' | ')
-            line.append('{}'.format(i.id))
-            lines.append(' '.join(line))
+        try:
+            for i in self.instances:
+                name = [tag['Value'] for tag in i.tags if tag['Key'] == 'Name'][0]
+                line = []
+                ip = i.public_ip_address or i.private_ip_address
+                line.append(name.ljust(50))
+                line.append(' | ')
+                line.append(ip.ljust(16))
+                line.append(' | ')
+                line.append('{}'.format(i.key_name).ljust(30))
+                line.append(' | ')
+                line.append('{}'.format(i.id))
+                lines.append(' '.join(line))
+            else:
+                sys.exit('No available instances')
+        except botocore.exceptions.ClientError:
+            sys.exit('Invalid Amazon Credentials')
 
         return lines
 

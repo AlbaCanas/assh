@@ -4,21 +4,21 @@ import boto3
 
 class AWSCli(object):
 
-    def __init__(self, aws_region, aws_key, aws_secret, aws_security_token=None, region=None):
+    def __init__(self, aws_region, aws_key, aws_secret, aws_security_token=None):
         self.aws_key = aws_key
         self.aws_secret = aws_secret
         self.aws_token = aws_security_token
-        self.region = region
+        self.region = aws_region
 
-        self.session = self.get_region(region)
+        self.session = self.get_region(aws_region)
         self.igw = {}
 
     def get_region(self, region):
         self.region = region
         session = boto3.Session(aws_access_key_id=self.aws_key,
-                                     aws_secret_access_key=self.aws_secret,
-                                     aws_session_token=self.aws_token,
-                                     region_name=region)
+                                aws_secret_access_key=self.aws_secret,
+                                aws_session_token=self.aws_token,
+                                region_name=region)
         return session
 
     def start(self, instance_id):
@@ -28,7 +28,6 @@ class AWSCli(object):
     def stop(self, instance_id):
         instance = self.get_instance(instance_id)
         instance.stop()
-
 
     def get_regions(self):
         return self.session.get_available_regions('ec2')
