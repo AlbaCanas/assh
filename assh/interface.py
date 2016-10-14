@@ -37,8 +37,6 @@ class SimpleLineLoader(object):
                 line.append(' | ')
                 line.append('{}'.format(i.id))
                 lines.append(' '.join(line))
-            else:
-                sys.exit('No available instances')
         except botocore.exceptions.ClientError:
             sys.exit('Invalid Amazon Credentials')
 
