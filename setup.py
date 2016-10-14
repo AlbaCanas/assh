@@ -16,6 +16,7 @@ setup(
     packages=['assh'],
     install_requires=['hst', 'boto3', 'plotly==1.9.6'],
     scripts=['./assh/bin/assh'],
+    entry_points={'console_scripts': ["aws_cli = assh.awscli:aws"]},
     classifiers = [
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
