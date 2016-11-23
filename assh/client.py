@@ -41,7 +41,7 @@ class AWSCli(object):
         :param tags: is a dictionary, eg: {'Name': 'App1'}
         :return:
         """
-        if self.region != region:
+        if self.region != region and region is not None:
             self.session = self.get_region(region)
 
         ec2 = self.session.resource('ec2')
